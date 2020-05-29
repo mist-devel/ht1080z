@@ -1,1 +1,15 @@
-build_id.v
+out/
+db/
+incremental_db/
+output_files/
+greybox_tmp
+PLLJ_PLLSPE_INFO.txt
+*.qws
+*.bak
+*.jdi
+*.sof
+*.done
+*.pin
+*.rpt
+*.smsg
+*.summary
