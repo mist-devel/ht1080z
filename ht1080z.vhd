@@ -42,8 +42,9 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.STD_LOGIC_ARITH.ALL;
 use IEEE.STD_LOGIC_UNSIGNED.ALL;
-use IEEE.NUMERIC_STD.ALL; 
-use work.mist.ALL;
+use IEEE.NUMERIC_STD.ALL;
+library mist;
+use mist.mist.ALL;
 
 entity ht1080z is
     Port ( CLOCK_27 : in  STD_LOGIC;
@@ -173,7 +174,7 @@ signal MPS2DAT : std_logic;
 signal joy0 : std_logic_vector(31 downto 0);
 signal joy1 : std_logic_vector(31 downto 0);
 
-signal status: std_logic_vector(31 downto 0);
+signal status: std_logic_vector(63 downto 0);
   
 signal clk42m : std_logic;
 signal pllLocked : std_logic;
@@ -244,8 +245,8 @@ begin
   memw <= cpuwr or cpumreq;
   
   romrd <= '1' when memr='0' and cpua<x"3780" else '0';
-  ramrd <= '1' when cpua(15 downto 14)="01" and memr='0' else '0';
-  ramwr <= '1' when cpua(15 downto 14)="01" and memw='0' else '0';
+  ramrd <= '1' when cpua(15 downto 14)/="00" and memr='0' else '0';
+  ramwr <= '1' when cpua(15 downto 14)/="00" and memw='0' else '0';
   vramsel <= '1' when cpua(15 downto 10)="001111" and cpumreq='0' else '0';
   kbdsel  <= '1' when cpua(15 downto 10)="001110" and memr='0' else '0';
   iorrd <= '1' when ior='0' and cpua(7 downto 0)=x"04" else '0'; -- in 04
@@ -274,14 +275,14 @@ begin
 
   cpudi <= --romdo when romrd='1' else
 	        --ramdo when ramrd='1' else
-			  --ram_dout when romrd='1' else
-			  --ram_dout when ramrd='1' else
+			  ram_dout when romrd='1' else
+			  ram_dout when ramrd='1' else
 			  vramdo when vramsel='1' else
 			  kbdout when kbdsel='1' else
 			  x"30" when ior='0' and cpua(7 downto 0)=x"fd" else -- printer io read
-			  --ram_dout when iorrd='1' else
-			  --x"ff";
-			  ram_dout;
+			  ram_dout when iorrd='1' else
+			  x"ff";
+			  --ram_dout;
 
 
   vdata <= cpudo when cpudo>x"1f" else cpudo or x"40";
@@ -363,10 +364,10 @@ begin
   sndBC1  <= cpua(0);
 	  
  -- Delta-Sigma DAC for audio (one channel, mono in this implementation)
- audiodac : entity work.dac
+ audiodac : entity mist.dac
     port map ( 
       clk_i   => clk42m,
-      res_n_i => swres and pllLocked,
+      res_n_i => '1',
       dac_i   => audiomix(8 downto 1), --oaudio,
       dac_o   => dacout
     ); 
@@ -401,7 +402,7 @@ begin
 	 "111110111110000000" when "1110",
 	 "111110111110111110" when others;
 
-  user_io: work.mist.user_io
+  user_io: mist.mist.user_io
    generic map (STRLEN => CONF_STR'length)
    port map (
 	    clk_sys   => clk42m,
@@ -429,7 +430,7 @@ begin
       no_csync => no_csync
 	); 
 
-mist_video : work.mist.mist_video
+mist_video : mist.mist.mist_video
   generic map (
     SD_HCNT_WIDTH => 10,
     OSD_COLOR => "110")
@@ -528,10 +529,12 @@ mist_video : work.mist.mist_video
 	 end if;
   end process; 
   
- process (clk42m)
+ process (clk42m, pllLocked)
  begin
-   if rising_edge(clk42m) then  
-		if pllLocked='0' or status(0)='1' or buttons(1) = '1' then
+   if pllLocked = '0' then
+		  res_cnt <= "000000";
+   elsif rising_edge(clk42m) then
+		if status(0)='1' or buttons(1) = '1' then
 		  res_cnt <= "000000";
 		else
 		  if (res_cnt/="111111") then
@@ -540,19 +543,19 @@ mist_video : work.mist.mist_video
 		end if;
    end if;
  end process;
-  
+ 
  cpuClkEn <= '1' when clk42div = 0 else '0'; -- 42/24 = 1.75 MHz
  clkref <= '1' when clk42div = 0 or clk42div = 12 else '0'; -- 42/24 = 1.75 MHz
  autores <= '1' when res_cnt="111111" else '0';   
 
 
- process (clk42m, dn_go,autores)
+ process (clk42m)
  begin
-   if dn_go='1' or autores='0' then
-	  io_ram_addr <= x"010000"; -- above 64k
-	  iorrd_r<='0';
-   elsif rising_edge(clk42m) then  
-		if cpuClkEn = '1' then
+   if rising_edge(clk42m) then  
+      if dn_go='1' or autores='0' then
+	     io_ram_addr <= x"010000"; -- above 64k
+	     iorrd_r<='0';
+		elsif cpuClkEn = '1' then
 		  if iow='0' and cpua(7 downto 0)=x"ff" then 
 		    tapebits <= cpudo(2 downto 0);
 		  end if;
