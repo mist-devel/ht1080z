@@ -23,25 +23,24 @@
 module sdram (
 
 	// interface to the MT48LC16M16 chip
-	inout  reg [15:0]	sd_data,    // 16 bit bidirectional data bus
-	output reg [12:0]	sd_addr,    // 13 bit multiplexed address bus
-	output [1:0] 		sd_dqm,     // two byte masks
-	output [1:0] 		sd_ba,      // two banks
-	output 				sd_cs,      // a single chip select
-	output 				sd_we,      // write enable
-	output 				sd_ras,     // row address select
-	output 				sd_cas,     // columns address select
+	inout reg [15:0]    sd_data,    // 16 bit bidirectional data bus
+	output reg [12:0]   sd_addr,    // 13 bit multiplexed address bus
+	output reg [1:0]    sd_dqm,     // two byte masks
+	output reg [1:0]    sd_ba,      // two banks
+	output              sd_cs,      // a single chip select
+	output              sd_we,      // write enable
+	output              sd_ras,     // row address select
+	output              sd_cas,     // columns address select
 
 	// cpu/chipset interface
-	input 		 		init,			// init signal after FPGA config to initialize RAM
-	input 		 		clk,			// sdram is accessed at up to 128MHz
-	input					clkref,		// reference clock to sync to
+	input               init,			// init signal after FPGA config to initialize RAM
+	input               clk,			// sdram is accessed at up to 128MHz
 	
-	input [7:0]  		din,			// data input from chipset/cpu
-	output reg [7:0]  dout,			// data output to chipset/cpu
-	input [24:0]   	addr,       // 25 bit byte address
-	input 		 		oe,         // cpu/chipset requests read
-	input 		 		we          // cpu/chipset requests write
+	input [7:0]         din,			// data input from chipset/cpu
+	output reg [7:0]    dout,       // data output to chipset/cpu
+	input [24:0]        addr,       // 25 bit byte address
+	input               oe,         // cpu/chipset requests read
+	input               we          // cpu/chipset requests write
 );
 
 // no burst configured
@@ -59,20 +58,14 @@ localparam MODE = { 3'b000, NO_WRITE_BURST, OP_MODE, CAS_LATENCY, ACCESS_TYPE, B
 // ---------------------------------------------------------------------
 
 localparam STATE_IDLE      = 3'd0;   // first state in cycle
-localparam STATE_CMD_START = 3'd1;   // state in which a new command can be started
-localparam STATE_CMD_CONT  = STATE_CMD_START  + RASCAS_DELAY - 3'd1; // 4 command can be continued
-localparam STATE_DATA      = STATE_CMD_CONT + CAS_LATENCY;
-localparam STATE_LAST      = 3'd7;   // last state in cycle
+localparam STATE_CMD_CONT  = STATE_IDLE + RASCAS_DELAY; // 2 command can be continued
+localparam STATE_CMD_READ  = STATE_CMD_CONT + CAS_LATENCY + 1'd1; // 5
+localparam STATE_LAST      = 3'd5;   // last state in cycle
 
-reg [2:0] q /* synthesis noprune */;
+reg [2:0] q;
 always @(posedge clk) begin
-	// 32Mhz counter synchronous to 4 Mhz clock
-   // force counter to pass state 5->6 exactly after the rising edge of clkref
-	// since clkref is two clocks early
-   if(((q == 6) && ( clkref == 0)) ||
-		((q == 7) && ( clkref == 1)) ||
-      ((q != 6) && (q != 7)))
-			q <= q + 3'd1;
+	q <= q + 1'd1;
+	if (q == STATE_LAST) q <= 0;
 end
 
 // ---------------------------------------------------------------------
@@ -82,7 +75,7 @@ end
 // wait 1ms (32 clkref cycles) after FPGA config is done before going
 // into normal operation. Initialize the ram in the last 16 reset cycles (cycles 15-0)
 reg [4:0] reset;
-always @(posedge clk) begin
+always @(posedge clk, posedge init) begin
 	if(init)	reset <= 5'h1f;
 	else if((q == STATE_LAST) && (reset != 0))
 		reset <= reset - 5'd1;
@@ -111,47 +104,48 @@ assign sd_ras = sd_cmd[2];
 assign sd_cas = sd_cmd[1];
 assign sd_we  = sd_cmd[0];
 
+wire [12:0] reset_addr = (reset == 13)?13'b0010000000000:MODE;
+reg oe_latch, we_latch;
+reg oe_old, we_old;
+wire oe_next = ~oe_old & oe;
+wire we_next = ~we_old & we;
+
 always @(posedge clk) begin
 	sd_cmd <= CMD_INHIBIT;
 	sd_data <= 16'bZZZZZZZZZZZZZZZZ;
 
 	if(reset != 0) begin
+		{oe_latch, we_latch} <= 0;
+		sd_dqm <= 2'b11;
+		sd_addr <= reset_addr;
 		if(q == STATE_IDLE) begin
-			sd_addr <= MODE;
-			if(reset == 13) begin
-				sd_addr <= 13'b0010000000000;
-				sd_cmd <= CMD_PRECHARGE;
-			end
+			if(reset == 13)  sd_cmd <= CMD_PRECHARGE;
 			if(reset ==  2)  sd_cmd <= CMD_LOAD_MODE;
 		end
 	end else begin
-		case (q)
-		STATE_IDLE:
-		begin
-			if(we || oe) begin
+		sd_dqm <= 2'b00;
+		if(q == STATE_IDLE) begin
+			oe_old <= oe;
+			we_old <= we;
+			{oe_latch, we_latch} <= {oe_next, we_next};
+			if(we_next || oe_next) begin
 				sd_cmd <= CMD_ACTIVE;
-				sd_addr <= addr[20:8];
+				sd_addr <= addr[21:9];
+				sd_ba <= addr[23:22];
 			end
-			else         sd_cmd <= CMD_AUTO_REFRESH;
-		end
-
-		STATE_CMD_CONT:
-		begin
-			if(we || oe) sd_addr <= { 4'b0010, addr[23], addr[7:0]};
-			if(we) begin
+			else sd_cmd <= CMD_AUTO_REFRESH;
+		end else if(q == STATE_CMD_CONT) begin
+			if(we_latch || oe_latch) sd_addr <= { 4'b0010, addr[8:0]};
+			if(we_latch) begin
 				sd_cmd <= CMD_WRITE;
 				sd_data <= {din, din};
 			end
-			else if(oe)  sd_cmd <= CMD_READ;
+			else if(oe_latch) sd_cmd <= CMD_READ;
+		end else if(q == STATE_CMD_READ) begin
+			if(oe_latch) dout <= sd_data[7:0];
 		end
-
-		STATE_DATA:	if(oe) dout <= sd_data[7:0];
-		endcase
 	end
 end
 
-assign sd_ba = addr[22:21];
-
-assign sd_dqm = 2'b00;
 
 endmodule

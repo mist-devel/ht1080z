@@ -43,12 +43,30 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.STD_LOGIC_ARITH.ALL;
 use IEEE.STD_LOGIC_UNSIGNED.ALL;
 use IEEE.NUMERIC_STD.ALL;
-library mist;
-use mist.mist.ALL;
 
 entity ht1080z is
-    Port ( CLOCK_27 : in  STD_LOGIC;
-	 
+    Port ( clk42m : in  STD_LOGIC;
+        pllLocked : in  STD_LOGIC;
+            reset : in  STD_LOGIC;
+              led : out STD_LOGIC;
+             ntsc : in  STD_LOGIC;
+
+           ps2clk : in  STD_LOGIC;
+           ps2dat : in  STD_LOGIC;			
+
+           ht_rgb : out std_logic_vector(17 downto 0);
+               hs : out STD_LOGIC;
+               vs : out STD_LOGIC;
+               hb : out STD_LOGIC;
+               vb : out STD_LOGIC;
+         audiomix : out std_logic_vector(8 downto 0); 
+
+            dn_go : in  std_logic;
+            dn_wr : in  std_logic;
+          dn_addr : in  std_logic_vector(24 downto 0);
+          dn_data : in  std_logic_vector(7 downto 0);
+           dn_idx : in  std_logic_vector(4 downto 0);
+
 		 -- SDRAM
 		  SDRAM_nCS : out std_logic;                     -- Chip Select
 		   SDRAM_DQ : inout std_logic_vector(15 downto 0); -- SDRAM Data bus 16 Bits
@@ -59,45 +77,12 @@ entity ht1080z is
 		 SDRAM_nCAS : out std_logic; -- SDRAM Column Address Strobe
 		 SDRAM_nRAS : out std_logic; -- SDRAM Row Address Strobe
 		   SDRAM_BA : out std_logic_vector(1 downto 0); -- SDRAM Bank Address
-		  SDRAM_CLK : out std_logic; -- SDRAM Clock
-		  SDRAM_CKE : out std_logic; -- SDRAM Clock Enable			 
-			  			  			  
-		-- SPI interface to arm io controller
-			SPI_DO	: out std_logic;
-			SPI_DI	: in  std_logic;
-			SPI_SCK	: in  std_logic;
-			SPI_SS2	: in  std_logic;
-			SPI_SS3	: in  std_logic;
-			SPI_SS4	: in  std_logic;
-		CONF_DATA0  : in  std_logic; 	 
-           VGA_R  : out  STD_LOGIC_VECTOR (5 downto 0);
-           VGA_G  : out  STD_LOGIC_VECTOR (5 downto 0);
-           VGA_B  : out  STD_LOGIC_VECTOR (5 downto 0);
-           VGA_HS : out  STD_LOGIC;
-           VGA_VS : out  STD_LOGIC;
-              LED : out  STD_LOGIC;
-			 AUDIO_L : out  STD_LOGIC;
-			 AUDIO_R : out  STD_LOGIC
-			  ); 
+		  SDRAM_CKE : out std_logic  -- SDRAM Clock Enable			 
+  			  			  
+    ); 
 end ht1080z;
 
 architecture Behavioral of ht1080z is
-
-component data_io
-  port (
-    clk_sys : in std_logic;
-
-    SPI_SCK, SPI_SS2, SPI_DI : in std_logic;
-    -- download info
-    ioctl_download : out std_logic;
-    ioctl_index    : out std_logic_vector(4 downto 0);
-
-    -- external ram interface
-    ioctl_wr       :  out std_logic;
-    ioctl_addr     :  out std_logic_vector(24 downto 0);
-    ioctl_dout     :  out std_logic_vector(7 downto 0)
-);
-end component data_io;
 
 component sdram is
       port( sd_data : inout std_logic_vector(15 downto 0);
@@ -110,7 +95,6 @@ component sdram is
              sd_cas : out std_logic;
                init : in std_logic;
                 clk : in std_logic;
-             clkref : in std_logic;
                 din : in std_logic_vector(7 downto 0);
                dout : out std_logic_vector(7 downto 0);
                addr : in std_logic_vector(24 downto 0);
@@ -119,37 +103,12 @@ component sdram is
       );
 end component;
 
-constant CONF_STR : string := "HT1080Z;CAS;O12,Scanlines,Off,25%,50%,75%;O3,Video,PAL,NTSC;T0,Reset";
-
-  function to_slv(s: string) return std_logic_vector is
-    constant ss: string(1 to s'length) := s;
-    variable rval: std_logic_vector(1 to 8 * s'length);
-    variable p: integer;
-    variable c: integer;
-  
-  begin
-    for i in ss'range loop
-      p := 8 * i;
-      c := character'pos(ss(i));
-      rval(p - 7 to p) := std_logic_vector(to_unsigned(c,8));
-    end loop;
-    return rval;
-
-  end function;   
-
-
 signal sdram_dqm  : std_logic_vector(1 downto 0);
 signal ram_addr : std_logic_vector(24 downto 0);
 signal  ram_din : STD_LOGIC_VECTOR(7 downto 0);
 signal ram_dout : STD_LOGIC_VECTOR(7 downto 0);
 signal ram_we: std_logic;
 signal ram_oe: std_logic; 
-
-signal   dn_go : std_logic;
-signal   dn_wr : std_logic;
-signal dn_addr : std_logic_vector(24 downto 0);
-signal dn_data : std_logic_vector(7 downto 0);
-signal  dn_idx : std_logic_vector(4 downto 0);
 
 signal   dn_wr_r : std_logic;
 signal dn_wr_new : std_logic;
@@ -159,33 +118,12 @@ signal dn_data_r : std_logic_vector(7 downto 0);
 signal res_cnt : std_logic_vector(5 downto 0) := "111111";
 signal autores : std_logic; 
 
-  
-signal scandoubler_disable : std_logic;
-signal ypbpr : std_logic;
-signal no_csync : std_logic;
-signal buttons : std_logic_vector(1 downto 0);
-
-signal PS2CLK : std_logic;
-signal PS2DAT : std_logic;
-
-signal MPS2CLK : std_logic;
-signal MPS2DAT : std_logic;
-
-signal joy0 : std_logic_vector(31 downto 0);
-signal joy1 : std_logic_vector(31 downto 0);
-
-signal status: std_logic_vector(63 downto 0);
-  
-signal clk42m : std_logic;
-signal pllLocked : std_logic;
- 
 signal cpua     : std_logic_vector(15 downto 0); 
 signal cpudo    : std_logic_vector(7 downto 0);
 signal cpudi    : std_logic_vector(7 downto 0);
 signal cpuwr,cpurd,cpumreq,cpuiorq,cpunmi,cpuint,cpum1,cpuClkEn,clkref : std_logic;
 
 signal rgbi : std_logic_vector(3 downto 0);
-signal hs,vs : std_logic;
 signal romdo,vramdo,ramdo,ramHdo,kbdout : std_logic_vector(7 downto 0);
 signal vramcs : std_logic;
 
@@ -201,14 +139,12 @@ signal dacout : std_logic;
 signal sndBC1,sndBDIR,sndCLK : std_logic;
 signal oaudio,snddo : std_logic_vector(7 downto 0); 
 
-signal ht_rgb : std_logic_vector(17 downto 0);
 signal p_hs,p_vs,vgahs,vgavs : std_logic; 
 signal pclk : std_logic; 
 
 signal io_ram_addr : std_logic_vector(23 downto 0);
 signal iorrd,iorrd_r : std_logic;
 
-signal audiomix : std_logic_vector(8 downto 0); 
 signal tapebits : std_logic_vector(2 downto 0); 
 signal  speaker : std_logic_vector(7 downto 0); 
 signal vga : std_logic := '0';
@@ -220,16 +156,6 @@ begin
 
   led <= not dn_go;--swres;
   
-  -- generate system clocks 
-  clkmgr : entity work.pll
-   port map (
-	  inclk0 => CLOCK_27,
-	  c0 => clk42m,
-	  locked => pllLocked
-	); 
-
-	SDRAM_CLK <= clk42m;
-
   process(clk42m)
   begin
     if rising_edge(clk42m) then
@@ -298,7 +224,7 @@ begin
 		iorq => cpuiorq,
 		  wr => cpuwr,
 		  cs => not vramsel,
-		hz60 => status(3),
+		hz60 => ntsc,
 		vcut => vcut,
 		vvga => '0',
 		page => page,
@@ -309,7 +235,9 @@ begin
 	borderp => borderpulse,
 	oddline => oddline,
 	  hsync => hs,
-	  vsync => vs
+	  vsync => vs,
+	  hblank=> hb,
+	  vblank=> vb
    );  
 
   kbd : entity work.ps2kbd 
@@ -363,15 +291,6 @@ begin
   sndBDIR <= '1' when cpua(7 downto 1)="0001111" and iow='0' else '0';
   sndBC1  <= cpua(0);
 	  
- -- Delta-Sigma DAC for audio (one channel, mono in this implementation)
- audiodac : entity mist.dac
-    port map ( 
-      clk_i   => clk42m,
-      res_n_i => '1',
-      dac_i   => audiomix(8 downto 1), --oaudio,
-      dac_o   => dacout
-    ); 
-
   with tapebits select speaker <=
    "00100000" when "001",
 	"00010000" when "000"|"011",
@@ -379,9 +298,6 @@ begin
  
   audiomix <= ('0' & oaudio) + ('0' & speaker); 
  	 
-  AUDIO_L <= dacout;
-  AUDIO_R <= dacout; 	
-
 	-- fix palette for now
 	--with rgbi select rgb <=
 	with rgbi select ht_rgb <=
@@ -402,62 +318,6 @@ begin
 	 "111110111110000000" when "1110",
 	 "111110111110111110" when others;
 
-  user_io: mist.mist.user_io
-   generic map (STRLEN => CONF_STR'length)
-   port map (
-	    clk_sys   => clk42m,
-	    conf_str => to_slv(CONF_STR),
-	
-	    SPI_CLK   => SPI_SCK    ,
-      SPI_SS_IO => CONF_DATA0 ,
-      SPI_MISO  => SPI_DO     ,
-      SPI_MOSI  => SPI_DI     ,
-
-	    status    => status,
-	    buttons   => buttons,
-		 
-	    -- ps2 interface
-	    ps2_kbd_clk    => ps2CLK,
-	    ps2_kbd_data   => ps2DAT,
-	    ps2_mouse_clk  => mps2CLK,
-	    ps2_mouse_data => mps2DAT,
-		 
-	    joystick_0 => joy0,
-	    joystick_1 => joy1,
-		
-	    scandoubler_disable => scandoubler_disable,
-	    ypbpr => ypbpr,
-      no_csync => no_csync
-	); 
-
-mist_video : mist.mist.mist_video
-  generic map (
-    SD_HCNT_WIDTH => 10,
-    OSD_COLOR => "110")
-  port map (
-      clk_sys => clk42m,
-    scandoubler_disable => scandoubler_disable,
-    scanlines => status(2 downto 1),
-      ypbpr   => ypbpr,
-     no_csync => no_csync,
-      rotate  => "00",
-      SPI_SCK => SPI_SCK,
-      SPI_SS3 => SPI_SS3,
-       SPI_DI => SPI_DI,
-
-            R => ht_rgb(5 downto 0),
-            G => ht_rgb(11 downto 6),
-            B => ht_rgb(17 downto 12),
-        HSync => hs,
-        VSync => vs,
-
-        VGA_R => VGA_R,
-        VGA_G => VGA_G,
-        VGA_B => VGA_B,
-       VGA_HS => VGA_HS,
-       VGA_VS => VGA_VS
-);
-
   sdram_inst : sdram
     port map( sd_data => SDRAM_DQ,
               sd_addr => SDRAM_A,
@@ -468,7 +328,6 @@ mist_video : mist.mist.mist_video
                sd_ras => SDRAM_nRAS,
                sd_cas => SDRAM_nCAS,
                   clk => clk42m,
-               clkref => clkref,
                  init => not pllLocked,
                   din => ram_din,
                  addr => ram_addr,
@@ -488,22 +347,6 @@ mist_video : mist.mist.mist_video
   SDRAM_CKE <= '1';
   SDRAM_DQMH <= sdram_dqm(1);
   SDRAM_DQML <= sdram_dqm(0); 	 
-
-  dataio : data_io
-    port map (
-    clk_sys        => clk42m,
-    SPI_SCK        => SPI_SCK,
-    SPI_SS2        => SPI_SS2,
-		SPI_DI         => SPI_DI,
-
-    ioctl_download => dn_go,
-    ioctl_index    => dn_idx,
-
-    -- ram interface
-    ioctl_wr       => dn_wr,
-		ioctl_addr     => dn_addr,
-    ioctl_dout     => dn_data
-	 );
 
   process(clk42m)
   -- sync wr from data io to sdram clkref
@@ -534,7 +377,7 @@ mist_video : mist.mist.mist_video
    if pllLocked = '0' then
 		  res_cnt <= "000000";
    elsif rising_edge(clk42m) then
-		if status(0)='1' or buttons(1) = '1' then
+		if reset = '1' then
 		  res_cnt <= "000000";
 		else
 		  if (res_cnt/="111111") then

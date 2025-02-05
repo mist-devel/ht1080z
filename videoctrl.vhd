@@ -70,7 +70,10 @@ entity videoctrl is
             rgbi : out STD_LOGIC_VECTOR (3 downto 0);	
 				pclk : out STD_LOGIC;
            hsync : out STD_LOGIC;
-           vsync : out STD_LOGIC);
+           vsync : out STD_LOGIC;
+          hblank : out STD_LOGIC;
+          vblank : out STD_LOGIC
+    );
 end videoctrl;
 
 architecture Behavioral of videoctrl is
@@ -371,14 +374,14 @@ signal xpxclk_en : std_logic;
 
 signal hact,vact : std_logic;
 
-
 signal border : std_logic_vector(3 downto 0) := "0010";
 signal  paper : std_logic_vector(3 downto 0) := "0000";
 signal    ink : std_logic_vector(3 downto 0) := "1000";
 signal  pixel : std_logic_vector(3 downto 0);
 
 signal screen : std_logic;
-signal hblank,vblank,blank : std_logic;
+signal hblank_n, vblank_n : std_logic;
+signal blank : std_logic;
 
 signal vaVert : std_logic_vector(3 downto 0); -- vertical line
 signal vaHoriz : std_logic_vector(5 downto 0); -- horizontal columnt pos
@@ -545,18 +548,18 @@ begin
 	if vvga='0' then
 		-- 12*10.5
 		if hctr<126 or hctr>654 then
-		  hblank <= '0';
+		  hblank_n <= '0';
 		else
-		  hblank <= '1';
+		  hblank_n <= '1';
 		end if;
 	else
 	   -- VGA 6us
 		-- 
 		--if hctr<64 or hctr>662 then
 		if hctr<120 or hctr>654 then
-		  hblank <= '0';
+		  hblank_n <= '0';
 		else
-		  hblank <= '1';
+		  hblank_n <= '1';
 		end if;	
 	end if;
 	
@@ -568,9 +571,9 @@ begin
 		end if;
 		
 		if vctr<6 or vctr>309 then
-		  vblank <= '0';
+		  vblank_n <= '0';
 		else
-		  vblank <= '1';
+		  vblank_n <= '1';
 		end if;
 
    else
@@ -581,9 +584,9 @@ begin
 		end if;	
 		
 		if vctr<16 or vctr>257 then
-		  vblank <= '0';
+		  vblank_n <= '0';
 		else
-		  vblank <= '1';
+		  vblank_n <= '1';
 		end if;
 		
    end if;
@@ -640,7 +643,9 @@ begin
 end process; 
 
 pixel <= border when screen='0' else paper when shiftReg(5)='0' else ink;
-blank <= hblank and vblank;
+blank <= hblank_n and vblank_n;
+hblank <= not hblank_n;
+vblank <= not vblank_n;
 rgbi <= pixel when blank='1' else "0000";
 pclk <= clk10_5 when vvga='0' else clk21;
 oddline <= v1;
