@@ -175,6 +175,7 @@ localparam CONF_STR = {
 `ifndef USE_EXPANSION
 	"OB,Userport,Tape,UART;",
 `endif
+	"O7,CPU Speed,1.75MHz,3.5MHz;",
 	"O34,Scanlines,Off,25%,50%,75%;",
 	"O5,Blend,Off,On;",
 	"O6,Tape Sounds,Off,On;",
@@ -187,6 +188,7 @@ wire        blend = status[5];
 wire        tapesnd = status[6];
 wire        ntsc = status[2];
 wire        uart_en = status[11];
+wire        turbo = status[7];
 
 wire        ledb;
 assign      LED = ~ledb;
@@ -320,6 +322,7 @@ ht1080z ht1080z (
 	.reset(reset),
 	.led(ledb),
 	.ntsc(ntsc),
+	.turbo(turbo),
 
 	.ps2clk(ps2_kbd_clk),
 	.ps2dat(ps2_kbd_data),

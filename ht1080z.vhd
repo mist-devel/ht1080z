@@ -50,6 +50,7 @@ entity ht1080z is
             reset : in  STD_LOGIC;
               led : out STD_LOGIC;
              ntsc : in  STD_LOGIC;
+            turbo : in  STD_LOGIC;
 
            ps2clk : in  STD_LOGIC;
            ps2dat : in  STD_LOGIC;			
@@ -387,8 +388,8 @@ begin
    end if;
  end process;
  
- cpuClkEn <= '1' when clk42div = 0 else '0'; -- 42/24 = 1.75 MHz
- clkref <= '1' when clk42div = 0 or clk42div = 12 else '0'; -- 42/24 = 1.75 MHz
+ cpuClkEn <= '1' when clk42div = 0 or (turbo = '1' and clk42div = 12) else '0'; -- 42/24 = 1.75 MHz
+ clkref <= '1' when clk42div = 0 or clk42div = 12 else '0'; -- 42/24*2 = 3.5 MHz
  autores <= '1' when res_cnt="111111" else '0';   
 
 
