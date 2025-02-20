@@ -108,7 +108,10 @@ module HT1080Z_MiST (
 	input         AUDIO_IN,
 `endif
 `ifdef USE_EXPANSION
-	output        EXP5,
+	input         UART_CTS,
+	output        UART_RTS,
+	inout         EXP7,
+	inout         MOTOR_CTRL,
 `endif
 	input         UART_RX,
 	output        UART_TX
@@ -169,16 +172,22 @@ assign SDRAM2_nWE = 1;
 
 localparam CONF_STR = {
 	"HT1080Z;;",
-	"F1,CAS,Load PAC;",
+	"F1,CAS,Load;",
 	`SEP
 	"O2,Video,PAL,NTSC;",
-`ifndef USE_EXPANSION
-	"OB,Userport,Tape,UART;",
-`endif
 	"O7,CPU Speed,1.75MHz,3.5MHz;",
 	"O34,Scanlines,Off,25%,50%,75%;",
 	"O5,Blend,Off,On;",
 	"O6,Tape Sounds,Off,On;",
+`ifndef USE_EXPANSION
+	"OB,Userport,Tape,UART;",
+`endif
+	"P1,RS232;",
+	"P1OCE,Baud Rate,9600,4800,2400,1200,600,300,150,110;",
+	"P1OF,Parity,Disable,Enable;",
+	//"P1OG,Stop bits,2 bits,1 bit;",
+	"P1OHI,Word Length,8 bits,7 bits,6 bits,5 bits;",
+	"P1OJ,Parity,Even,Odd;",
 	"T0,Reset;",
 	"V,v1.00.",`BUILD_DATE
 };
@@ -189,6 +198,7 @@ wire        tapesnd = status[6];
 wire        ntsc = status[2];
 wire        uart_en = status[11];
 wire        turbo = status[7];
+wire  [7:0] uart_cfg = status[19:12];
 
 wire        ledb;
 assign      LED = ~ledb;
@@ -297,8 +307,8 @@ wire        hs, vs;
 wire        hb, vb;
 reg   [1:0] cass_in;
 wire        cass_out;
-wire        cass_motor;
-wire        uart_tx;
+wire        cass_motor = 0;
+wire        uart_tx, uart_rts, uart_cts;
 
 always @(posedge clk42) begin
 `ifdef USE_AUDIO_IN
@@ -310,11 +320,18 @@ always @(posedge clk42) begin
 end
 
 `ifdef USE_EXPANSION
-assign EXP5 = ~cass_motor;
+assign MOTOR_CTRL = cass_motor ? 1'b0 : 1'bZ;
 assign UART_TX = uart_tx;
+assign UART_RTS = uart_rts;
+assign uart_cts = UART_CTS;
 `else
 assign UART_TX = uart_en ? uart_tx : ~cass_motor;
+assign uart_cts = 0;
 `endif
+
+wire [15:0] exp_addr;
+wire  [7:0] exp_din, exp_dout;
+wire        exp_in, exp_out, exp_oe;
 
 ht1080z ht1080z (
 	.clk42m (clk42),
@@ -341,6 +358,13 @@ ht1080z ht1080z (
 	.dn_data(ioctl_dout),
 	.dn_idx(ioctl_index),
 
+	.exp_addr(exp_addr),
+	.exp_din(exp_din),
+	.exp_dout(exp_dout),
+	.exp_in(exp_in),
+	.exp_out(exp_out),
+	.exp_oe(exp_oe),
+
 	//-- SDRAM
 	.SDRAM_nCS(SDRAM_nCS),
 	.SDRAM_DQ(SDRAM_DQ),
@@ -351,6 +375,23 @@ ht1080z ht1080z (
 	.SDRAM_nCAS(SDRAM_nCAS),
 	.SDRAM_nRAS(SDRAM_nRAS),
 	.SDRAM_BA(SDRAM_BA)
+);
+
+trs80_rs232 rs232 (
+	.clk(clk42),
+	.reset(reset),
+	.cfg(uart_cfg),
+	.addr(exp_addr[2:0]),
+	.e8(exp_addr[7:3] == 5'b11101),
+	.in(exp_in),
+	.out(exp_out),
+	.din(exp_dout),
+	.dout(exp_din),
+	.oe(exp_oe),
+	.uart_rx(UART_RX),
+	.uart_tx(uart_tx),
+	.uart_cts(uart_cts),
+	.uart_rts(uart_rts)
 );
 
 mist_dual_video #(.COLOR_DEPTH(6), .SD_HCNT_WIDTH(10), .OUT_COLOR_DEPTH(VGA_BITS), .USE_BLANKS(1'b1), .BIG_OSD(BIG_OSD), .VIDEO_CLEANER(1'b1)) mist_video(

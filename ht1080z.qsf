@@ -335,6 +335,8 @@ set_global_assignment -name VERILOG_FILE sdram.v
 set_global_assignment -name VHDL_FILE ps2reader.vhd
 set_global_assignment -name VHDL_FILE ps2kbd.vhd
 set_global_assignment -name VHDL_FILE ht1080z.vhd
+set_global_assignment -name VERILOG_FILE trs80_rs232.v
+set_global_assignment -name VERILOG_FILE gen_uart.v
 set_global_assignment -name QIP_FILE pll.qip
 set_global_assignment -name SIGNALTAP_FILE output_files/vid.stp
 set_global_assignment -name QIP_FILE T80/T80.qip

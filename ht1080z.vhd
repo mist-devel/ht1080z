@@ -53,7 +53,7 @@ entity ht1080z is
             turbo : in  STD_LOGIC;
 
            ps2clk : in  STD_LOGIC;
-           ps2dat : in  STD_LOGIC;			
+           ps2dat : in  STD_LOGIC;
 
            ht_rgb : out std_logic_vector(17 downto 0);
                hs : out STD_LOGIC;
@@ -67,6 +67,13 @@ entity ht1080z is
           dn_addr : in  std_logic_vector(24 downto 0);
           dn_data : in  std_logic_vector(7 downto 0);
            dn_idx : in  std_logic_vector(4 downto 0);
+
+         exp_addr : out std_logic_vector(15 downto 0);
+           exp_in : out std_logic;
+          exp_out : out std_logic;
+         exp_dout : out std_logic_vector(7 downto 0);
+          exp_din : in  std_logic_vector(7 downto 0);
+           exp_oe : in  std_logic;
 
 		 -- SDRAM
 		  SDRAM_nCS : out std_logic;                     -- Chip Select
@@ -177,7 +184,12 @@ begin
   vramsel <= '1' when cpua(15 downto 10)="001111" and cpumreq='0' else '0';
   kbdsel  <= '1' when cpua(15 downto 10)="001110" and memr='0' else '0';
   iorrd <= '1' when ior='0' and cpua(7 downto 0)=x"04" else '0'; -- in 04
-    
+
+  exp_addr <= cpua;
+  exp_out <= not iow;
+  exp_in <= not ior;
+  exp_dout <= cpudo;
+
   cpu : entity work.T80s
    port map (  
 	   RESET_n => autores, --swres,
@@ -202,6 +214,7 @@ begin
 
   cpudi <= --romdo when romrd='1' else
 	        --ramdo when ramrd='1' else
+           exp_din when exp_oe = '1' else
 			  ram_dout when romrd='1' else
 			  ram_dout when ramrd='1' else
 			  vramdo when vramsel='1' else
@@ -209,8 +222,6 @@ begin
 			  x"30" when ior='0' and cpua(7 downto 0)=x"fd" else -- printer io read
 			  ram_dout when iorrd='1' else
 			  x"ff";
-			  --ram_dout;
-
 
   vdata <= cpudo when cpudo>x"1f" else cpudo or x"40";
   -- video ram at 0x3C00
