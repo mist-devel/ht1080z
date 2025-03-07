@@ -107,7 +107,7 @@ module HT1080Z_MiST (
 `ifdef USE_AUDIO_IN
 	input         AUDIO_IN,
 `endif
-`ifdef USE_EXPANSION
+`ifdef SIDI128_EXPANSION
 	input         UART_CTS,
 	output        UART_RTS,
 	inout         EXP7,
@@ -179,7 +179,7 @@ localparam CONF_STR = {
 	"O34,Scanlines,Off,25%,50%,75%;",
 	"O5,Blend,Off,On;",
 	"O6,Tape Sounds,Off,On;",
-`ifndef USE_EXPANSION
+`ifndef SIDI128_EXPANSION
 	"OB,Userport,Tape,UART;",
 `endif
 	"P1,RS232;",
@@ -319,7 +319,7 @@ always @(posedge clk42) begin
 	cass_in[1] <= cass_in[0];
 end
 
-`ifdef USE_EXPANSION
+`ifdef SIDI128_EXPANSION
 assign MOTOR_CTRL = cass_motor ? 1'b0 : 1'bZ;
 assign UART_TX = uart_tx;
 assign UART_RTS = uart_rts;
